@@ -1,0 +1,219 @@
+---
+title: "Road Casualty Statistics Analysis"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+## Introduction
+In this analysis, we explore the road casualty statistics for 2022. The dataset provides comprehensive data on various aspects of road accidents, including the number of vehicles involved, casualties, weather conditions, and more.
+
+#### Step 1: Load and Inspect the Data
+```{r}
+
+# Load necessary libraries
+library(tidyverse)
+library(readr)
+
+# Load the dataset
+data <- read_csv("dft-road-casualty-statistics-collision-2022.csv")
+
+# Inspect the data
+glimpse(data)
+
+```
+
+#### Step 2: Identify and Drop Columns with Missing Values
+
+```{r}
+
+# Identify columns with missing values
+missing_data_summary <- colSums(is.na(data))
+missing_data_summary
+
+# Drop columns with missing values
+data_clean <- data %>%
+  select(-which(colSums(is.na(data)) > 0))
+
+# Inspect the cleaned dataset
+glimpse(data_clean)
+
+
+```
+#### Step 3: Data Preparation
+
+```{r}
+
+
+# Convert date to Date format and time to POSIXct
+data_clean$date <- as.Date(data_clean$date, format="%Y-%m-%d")
+data_clean$time <- as.POSIXct(data_clean$time, format="%H:%M")
+
+# Ensure all necessary columns are in the correct data format
+data_clean <- data_clean %>%
+  mutate(across(where(is.character), as.factor))
+
+```
+#### Step 4: Descriptive Statistics
+```{r}
+
+# Summary statistics for key variables
+summary(data_clean)
+
+# Frequency of accidents by severity
+accident_severity_dist <- data_clean %>%
+  group_by(accident_severity) %>%
+  summarise(count = n())
+
+accident_severity_dist
+
+```
+#### Step 5: Analyze Factors Contributing to Accident Severity
+```{r}
+
+# Accident severity by urban or rural area
+severity_by_area <- data_clean %>%
+  group_by(urban_or_rural_area, accident_severity) %>%
+  summarise(count = n())
+
+severity_by_area
+
+# Impact of weather conditions on the number of casualties
+weather_vs_casualties <- data_clean %>%
+  group_by(weather_conditions) %>%
+  summarise(avg_casualties = mean(number_of_casualties))
+
+weather_vs_casualties
+
+```
+#### Step 6: Analyze Impact of Time on Accident Frequency and Severity
+```{r}
+# Create a new column for the hour of the day
+data_clean <- data_clean %>%
+  mutate(hour = format(time, "%H"))
+
+# Calculate average severity per hour
+time_vs_severity <- data_clean %>%
+  group_by(hour) %>%
+  summarise(avg_severity = mean(accident_severity))
+
+time_vs_severity
+
+```
+#### Step 7: Logistic Regression for Predicting Accident Severity
+```{r}
+
+# Convert accident severity to binary (1 for fatal, 0 for non-fatal)
+data_clean <- data_clean %>%
+  mutate(severe_accident = ifelse(accident_severity == 1, 1, 0))
+
+# Logistic regression model
+logistic_model <- glm(severe_accident ~ weather_conditions + road_surface_conditions + hour, 
+                      data = data_clean, family = binomial)
+
+summary(logistic_model)
+
+```
+
+#### Step 8: Prepare Data for Power BI
+```{r}
+# Export the cleaned dataset for further analysis in Power BI
+write_csv(data_clean, "cleaned_road_accident_data.csv")
+
+# Export the summarized data for visualization
+write_csv(accident_severity_dist, "accident_severity_dist.csv")
+write_csv(weather_vs_casualties, "weather_vs_casualties.csv")
+write_csv(time_vs_severity, "time_vs_severity.csv")
+
+```
+
+##### Interaction Effects in Logistic Regression
+```{r}
+
+
+# Interaction effect in logistic regression
+interaction_model <- glm(severe_accident ~ weather_conditions * road_surface_conditions + hour, 
+                         data = data_clean, family = binomial)
+
+summary(interaction_model)
+
+
+```
+##### Feature Engineering
+
+```{r}
+# Create Day/Night indicator
+data_clean <- data_clean %>%
+  mutate(day_night = ifelse(hour >= 6 & hour < 18, "Day", "Night"))
+
+# Create Weekend indicator
+data_clean <- data_clean %>%
+  mutate(weekend = ifelse(day_of_week %in% c(6, 7), "Weekend", "Weekday"))
+
+
+```
+
+##### Clustering Analysis
+```{r}
+# Select relevant features for clustering
+cluster_data <- data_clean %>%
+  select(number_of_casualties, number_of_vehicles, weather_conditions, road_surface_conditions) %>%
+  scale()
+
+# Perform k-means clustering
+set.seed(123)
+kmeans_result <- kmeans(cluster_data, centers = 3, nstart = 20)
+
+# Add cluster information to the dataset
+data_clean$cluster <- kmeans_result$cluster
+```
+
+##### Analyzing Temporal Trends
+```{r}
+# Create a month and season column
+data_clean <- data_clean %>%
+  mutate(month = format(date, "%m"),
+         season = case_when(
+           month %in% c("12", "01", "02") ~ "Winter",
+           month %in% c("03", "04", "05") ~ "Spring",
+           month %in% c("06", "07", "08") ~ "Summer",
+           TRUE ~ "Fall"
+         ))
+
+# Analyze accident frequency by season
+accidents_by_season <- data_clean %>%
+  group_by(season) %>%
+  summarise(count = n(), avg_severity = mean(accident_severity))
+
+accidents_by_season
+
+```
+##### Correlation
+```{r}
+# Install the corrplot package if not already installed
+if (!require("corrplot")) {
+    install.packages("corrplot", dependencies = TRUE)
+    library(corrplot)
+} else {
+    library(corrplot)
+}
+
+# Check if any plotting device is open and close it
+if (dev.cur() != 1) dev.off()
+
+# Filter out non-numeric columns
+data_numeric <- data_clean %>%
+  select_if(is.numeric)
+
+# Check if all columns are numeric
+str(data_numeric)
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(data_numeric, use = "complete.obs")
+
+# Display the correlation matrix
+print(correlation_matrix)
+
+
+```
